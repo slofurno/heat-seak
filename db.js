@@ -22,7 +22,7 @@ setInterval(function(){
         .then(res => {
             try {
                 return parseHistoryResponse(res)
-                    .map(o => Object.assign({}, {station:next}, o));
+                    .map(o => Object.assign({}, {station:next.station}, o));
             } catch(e) {
                 throw e;
             }
@@ -32,7 +32,7 @@ setInterval(function(){
             console.log(err);
         });
       
-},2000);
+},500);
 
 makeDates(); 
 startNearby();
@@ -120,7 +120,14 @@ function startNearby ()
             return Object.keys(stations);
         })
         .then(stations => {
-            jobs.push(...stations);
+            console.log("there are", stations.length, "stations");
+            stations.forEach(station => {
+                dates.forEach(date => {
+                    jobs.push({station, date});
+                });
+            });
+            console.log("# jobs:", jobs.length);
+            //jobs.push(...stations);
         });
 }
 
@@ -206,9 +213,10 @@ function saveResponse (job)
     });    
 }
 
-function getStationHistory (station)
+function getStationHistory (job)
 {
-    var date = "20151001";
+    var station = job.station;
+    var date = job.date;
 //history_2015122220151229
 //history_2016011220160119
 //history_2016010520160112
@@ -216,8 +224,6 @@ function getStationHistory (station)
 //history_2015121520151222
 
     var path = `/api/606f3f6977348613/history_${date}/units:english/v:2.0/q/pws:${station}.json`;
-
-    console.log("query:", path);
 
 	var options = {
 		hostname: "api.wunderground.com",
