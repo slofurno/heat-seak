@@ -50,14 +50,18 @@ router.get("/history/:zip", (req, res) => {
 
     findNearest(zip)
         .then(rows => {
-            if (rows.length !== 1){
+            if (rows.length === 0){
                 throw "where the rows at";
             }
             return rows[0].station;
+            /*
+            var prs = rows.map(x => x.station).map(getObservations);
+            return Promise.all(prs);
+            */
         })
         .then(getObservations)
         .then(obs => {
-            res.json(obs);
+            res.json([obs]);
         })
         .catch(err => {
             console.log(err);  
@@ -68,7 +72,8 @@ function getObservations (station)
 {
     return new Promise((resolve, reject) => {
         db.all(`SELECT * FROM observations
-               WHERE station=$station`, {
+               WHERE station=$station
+               ORDER BY time ASC`, {
                    $station:station
                }, (err, rows) => {
                    if (err) {
@@ -85,7 +90,7 @@ function findNearest (zip)
     return new Promise((resolve, reject) => {
         db.all(`SELECT * from nearby
                 WHERE nearby.zip=$zip
-                ORDER BY distance DESC
+                ORDER BY distance ASC
                 LIMIT 1
                 `,{
                     $zip: zip,

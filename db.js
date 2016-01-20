@@ -7,12 +7,13 @@ db.exec(`PRAGMA synchronous = OFF;
 
 
 var jobs = [];
+var dates = [];
 
 setInterval(function(){
     var next = jobs.pop();
     
     if (!next) {
-        console.log("no job");
+        //console.log("no job");
         return;    
     }
 
@@ -31,7 +32,40 @@ setInterval(function(){
             console.log(err);
         });
       
-},500);
+},2000);
+
+makeDates(); 
+startNearby();
+
+function toWuDate (date)
+{
+    var dt = date.toLocaleDateString().split("/").map(x => "00" + x);
+
+    var m = dt[0].slice(-2);
+    var d = dt[1].slice(-2);
+    var y = dt[2].slice(-4);
+
+    return y + m + d
+}
+
+function makeDates ()
+{
+    var WEEK = 1000 * 60 * 60 * 24 * 7;
+    var DAY = 1000 * 60 * 60 * 24;
+
+    var date = new Date(2015, 9, 1);
+    var now = Date.now();
+    var time;
+
+    while ((time = date.getTime()) < now) {
+        var next = new Date(time + DAY); 
+        //dates.push(toWuDate(date) + toWuDate(next));
+        dates.push(toWuDate(date));
+        date = next;
+    }
+
+    console.log(dates);
+}
 
 function bulkInsertObservations (observations)
 {
@@ -73,19 +107,22 @@ function toObservation (obs)
 	return {time: epoch_ms, temperature};
 }
 
-getNearby()
-    .then(rows => {
-        var stations = {};
+function startNearby ()
+{
+    return getNearby()
+        .then(rows => {
+            var stations = {};
 
-        rows.forEach(row => {
-            stations[row.station] = true;
+            rows.forEach(row => {
+                stations[row.station] = true;
+            });
+
+            return Object.keys(stations);
+        })
+        .then(stations => {
+            jobs.push(...stations);
         });
-
-        return Object.keys(stations);
-    })
-    .then(stations => {
-        jobs.push(...stations);
-    });
+}
 
 
 function getNearby ()
@@ -152,31 +189,63 @@ function findNearby ()
     });
 }
 
+function saveResponse (job)
+{
+    console.log("saving raw response for", job.path);
+    return new Promise((resolve, reject) => {
+        db.run("insert into wu VALUES (?,?)", [
+                job.path, job.body
+        ], (err) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(job.body);
+            }
+        });
+
+    });    
+}
 
 function getStationHistory (station)
 {
+    var date = "20151001";
+//history_2015122220151229
+//history_2016011220160119
+//history_2016010520160112
+//history_2015122920160105
+//history_2015121520151222
+
+    var path = `/api/606f3f6977348613/history_${date}/units:english/v:2.0/q/pws:${station}.json`;
+
+    console.log("query:", path);
+
 	var options = {
 		hostname: "api.wunderground.com",
-		path: `/api/606f3f6977348613/history_2016011220160119/units:english/v:2.0/q/pws:${station}.json`,
+		path: path,
 		method: "GET"
 	};
 
-	return new Promise((resolve, reject) => {
-		var req = http.request(options, (res) => {
-			var body = "";
-			res.setEncoding('utf8');
-			res.on('data', (chunk) => {
-				body+=chunk;
-			});
-			res.on('end', () => {
-                resolve(body);		
-			})
-		});
+	var makeRequest = function () {
+        return new Promise((resolve, reject) => {
+            var req = http.request(options, (res) => {
+                var body = "";
+                res.setEncoding('utf8');
+                res.on('data', (chunk) => {
+                    body+=chunk;
+                });
+                res.on('end', () => {
+                    resolve({path, body});		
+                })
+            });
 
-		req.on('error', (e) => {
-			reject(e);
-		});
+            req.on('error', (e) => {
+                reject(e);
+            });
 
-		req.end();
-	});
+            req.end();
+        });
+    };
+
+    return makeRequest()
+        .then(saveResponse);
 }

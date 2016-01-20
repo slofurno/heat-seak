@@ -7,16 +7,18 @@
 
 
 .chart {
-  background-color: lightgray;
+    background-color: lightgray;
 	width:4000px;
 	height:600px;
+    line-height:600px;
 }
 
 .bar {
 	display:inline-block;
-	width:6px;
+	width:2px;
 	background-color:cornflowerblue;
-	border:1px solid white;
+	border-right:1px solid white;
+    vertical-align:bottom;
 }
 
 
@@ -26,9 +28,11 @@
 <body>
 	<input type="text" id="zip" placeholder="zip code"/>
 	<input type="button" id="submit" value="query"/>
+    <div id="container"></div>
 	
-	<div class="chart" id="chart"></div>
 <script>
+
+var container = document.getElementById("container");
 
 document.getElementById("submit").onclick=function(e){
 	var zip = document.getElementById("zip").value;
@@ -40,8 +44,9 @@ function request (zip)
     var client = new XMLHttpRequest();
     client.onload = function(e){
         
-        var data = JSON.parse(client.response);
-		renderChart(data);
+        var datas = JSON.parse(client.response);
+        container.innerHTML="";
+        datas.forEach(renderChart);
     };
 
     client.open("GET", `/api/history/${zip}`);
@@ -50,26 +55,29 @@ function request (zip)
 
 function renderChart (data)
 {
-	var chart = document.getElementById("chart");
+    var chart = document.createElement("div");
+    chart.className="chart";
 
-	chart.innerHTML = "";
 	var temps = data.map(x => x.temperature);
 	var min = Math.min(...temps);
 	var max = Math.max(...temps);
+    console.log(min, max);
 	var scale = max-min;
 
 	data.forEach(d => {
 
 		var el = document.createElement("div");
 		el.className = "bar";
-		var height = ((d.temperature - min)/scale)*600;
-		var wtf = `${height}px`;
-		console.log(wtf);
+		//var height = ((d.temperature - min)/scale)*600;
+        var height = ((d.temperature + 10)/100) * 100;
+
+		var wtf = `${height}%`;
 
 		el.style.height = wtf;
 		chart.appendChild(el);
 	});	
 	
+    container.appendChild(chart);
 
 }
      
