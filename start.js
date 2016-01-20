@@ -193,5 +193,5 @@ function next ()
 	.catch(console.error);
 }
 
-
+app.use(express.static("static"));
 var server = app.listen(3001);

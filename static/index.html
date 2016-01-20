@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang=en>
+<head>
+    <meta charset=utf-8>
+<style>
+
+
+
+.chart {
+  background-color: lightgray;
+	width:4000px;
+	height:600px;
+}
+
+.bar {
+	display:inline-block;
+	width:6px;
+	background-color:cornflowerblue;
+	border:1px solid white;
+}
+
+
+</style>
+
+</head>
+<body>
+	<input type="text" id="zip" placeholder="zip code"/>
+	<input type="button" id="submit" value="query"/>
+	
+	<div class="chart" id="chart"></div>
+<script>
+
+document.getElementById("submit").onclick=function(e){
+	var zip = document.getElementById("zip").value;
+	request(zip);
+};
+
+function request (zip)
+{
+    var client = new XMLHttpRequest();
+    client.onload = function(e){
+        
+        var data = JSON.parse(client.response);
+		renderChart(data);
+    };
+
+    client.open("GET", `/api/history/${zip}`);
+    client.send();
+}
+
+function renderChart (data)
+{
+	var chart = document.getElementById("chart");
+
+	chart.innerHTML = "";
+	var temps = data.map(x => x.temperature);
+	var min = Math.min(...temps);
+	var max = Math.max(...temps);
+	var scale = max-min;
+
+	data.forEach(d => {
+
+		var el = document.createElement("div");
+		el.className = "bar";
+		var height = ((d.temperature - min)/scale)*600;
+		var wtf = `${height}px`;
+		console.log(wtf);
+
+		el.style.height = wtf;
+		chart.appendChild(el);
+	});	
+	
+
+}
+     
+</script>
+</body>
+</html>
