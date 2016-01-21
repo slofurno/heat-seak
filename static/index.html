@@ -8,7 +8,7 @@
 
 .chart {
     background-color: lightgray;
-	width:4000px;
+	width:40000px;
 	height:600px;
     line-height:600px;
 }
@@ -27,7 +27,8 @@
 </head>
 <body>
 	<input type="text" id="zip" placeholder="zip code"/>
-	<input type="button" id="submit" value="query"/>
+	<input type="button" id="submit" value="query by zip code"/>
+	<input type="button" id="station" value="query by station"/>
     <div id="container"></div>
 	
 <script>
@@ -39,6 +40,27 @@ document.getElementById("submit").onclick=function(e){
 	request(zip);
 };
 
+document.getElementById("station").onclick = function (e) {
+    
+	var station = document.getElementById("zip").value;
+    stationRequest(station);
+};
+
+function stationRequest (station)
+{
+    var client = new XMLHttpRequest();
+    client.onload = function(e){
+        
+        var datas = JSON.parse(client.response);
+        container.innerHTML="";
+        datas.forEach(renderChart);
+        datas.forEach(summarize);
+    };
+
+    client.open("GET", `/api/station/${station}/history`);
+    client.send();
+}
+
 function request (zip)
 {
     var client = new XMLHttpRequest();
@@ -47,10 +69,49 @@ function request (zip)
         var datas = JSON.parse(client.response);
         container.innerHTML="";
         datas.forEach(renderChart);
+        datas.forEach(summarize);
     };
 
-    client.open("GET", `/api/history/${zip}`);
+    client.open("GET", `/api/zip/${zip}/history`);
     client.send();
+}
+
+function summarize (data)
+{
+    var sums = [];
+
+    var DAY = 1000 * 60 * 60 * 24;
+
+    var date = new Date(2015, 9, 1);
+    var now = Date.now();
+    var time;
+
+    while ((time = date.getTime()) < now) {
+        var next = new Date(time + DAY); 
+        var end = time + DAY;
+
+        var today = data.filter(x => x.time < end && x.time >= time);
+        if (today.length > 0) {
+            var temps = today.map(x => x.temperature);
+            var min = Math.min(...temps);
+            var max = Math.max(...temps);
+            var sum = temps.reduce((a, c) => a + c);
+            var count = temps.length;
+            var mean = sum/count;
+
+            sums.push({
+                day: date.toLocaleDateString(),
+                min,
+                max,
+                mean,
+                count
+            });
+        }
+
+        date = next;
+    }
+
+    sums.forEach(x => console.log(x));
 }
 
 function renderChart (data)
