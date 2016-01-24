@@ -1,35 +1,159 @@
 var db = require('./db');
+var http = require('http');
+var observations = require('./observations');
 
 var jobs = [];
 var dates = [];
+var rawhours = [];
 
-setInterval(function(){
-    var next = jobs.pop();
-    
-    if (!next) {
-        //console.log("no job");
-        return;    
-    }
+var SECOND = 1000;
+var HOUR = 60 * 60 * SECOND;
+var DAY = HOUR * 24;
 
-    console.log("requesting history for station:", next);
-    getStationHistory(next)
-        .then(res => {
-            try {
-                return parseHistoryResponse(res)
-                    .map(o => Object.assign({}, {station:next.station}, o));
-            } catch(e) {
-                throw e;
-            }
-        })
-        .then(bulkInsertObservations)
-        .catch(err => {
-            console.log(err);
-        });
-      
-},500);
+function startWorker ()
+{
+    setInterval(function(){
+        var next = jobs.pop();
+        
+        if (!next) {
+            console.log("no job");
+            return;    
+        }
+
+        console.log("requesting history for station:", next);
+        getStationHistory(next)
+            .then(res => {
+                try {
+                    return parseHistoryResponse(res)
+                        .map(o => Object.assign({}, {station:next.station}, o));
+                } catch(e) {
+                    throw e;
+                }
+            })
+            .then(bulkInsertObservations)
+            .catch(err => {
+                console.log(err);
+            });
+          
+    },500);
+}
 
 makeDates(); 
-startNearby();
+//startNearby();
+startKNYC();
+startWorker();
+
+//makeHours();
+//startStats();
+
+function startStats ()
+{
+    if (rawhours.length === 0) return;
+
+    var next = rawhours.pop();
+
+    makeHourStats(next)
+        .then(x => {
+            startStats();
+        })
+        .catch(err => {
+            console.log(err);   
+        });
+}
+
+function makeHourStats (time)
+{
+    return getHour(time)
+        .then(hourlyStats)
+        .then(x => {
+            //console.log(hotones);
+        });
+}
+
+function Mathmean (n)
+{
+    var len = n.length;
+    var sum = 0;
+    for (var i = 0; i < len; i++) {
+        sum += n[i];
+    }
+    return sum/len;
+}
+
+var hotones = {};
+var knycdifs = [];
+
+function hourlyStats (res)
+{
+
+    var hour = res.rows;
+    hour.sort((a,b) => a.average - b.average);
+    /* 
+    var hottest = hour.slice(-10);
+    var coldest = hour.slice(0,5);
+
+    hottest.forEach(x => hotones[x.station] = x.station);
+    */
+
+    var time = res.time;
+    var pp = new Date(time).toLocaleString();
+
+    if (hour.length === 0) return {};
+    var hourly = hour.map(x => x.average);
+    var station_count = hourly.length;
+
+    var max = Math.max(...hourly);
+    var min = Math.min(...hourly);
+
+    var sum = hourly.reduce((a,c) => a + c);
+    var mean = sum/station_count;
+
+    var deviations = hourly.map(x => x - mean);
+    var ds = deviations.map(x => x * x);
+    var ds_sum = ds.reduce((a,c) => a + c);
+    var variance = ds_sum/station_count;
+    var std = Math.sqrt(variance);
+
+    var toohot = mean + 3*std;
+    var hot = hour.filter(x => x.average >= toohot);
+
+    hot.forEach(x => hotones[x.station] = true);
+
+    var knyc = hour.filter(x => x.station === 'KNYC');
+    var ok = hour.filter(x => !hotones[x.station]).map(x => x.average);
+
+    if (knyc.length === 1 && ok.length > 0) {
+        var okmean = Mathmean(ok);
+        var dif = okmean - knyc[0].average;
+        knycdifs.push(Math.abs(dif));
+        console.log(ok.length, okmean, knyc[0].average, Mathmean(knycdifs));
+    }
+
+    return {time:pp,min,max,mean,std,station_count};
+}
+
+function getHour (time)
+{
+    
+    var endTime = time + HOUR;
+
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT station, AVG(temperature) as average, count() as count 
+            FROM observations
+            WHERE time>=$time
+            AND time<$endTime
+            GROUP BY station`, {
+               $time: time,
+               $endTime: endTime
+            }, (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve({time,rows});
+                }
+            });
+    });
+}
 
 function toWuDate (date)
 {
@@ -40,6 +164,19 @@ function toWuDate (date)
     var y = dt[2].slice(-4);
 
     return y + m + d
+}
+
+function makeHours ()
+{
+    var date = new Date(2015, 9, 4);
+    var now = Date.now();
+    var time;
+
+    while ((time = date.getTime()) < now) {
+        var next = new Date(time + HOUR); 
+        rawhours.push(time);
+        date = next;
+    }
 }
 
 function makeDates ()
@@ -57,8 +194,6 @@ function makeDates ()
         dates.push(toWuDate(date));
         date = next;
     }
-
-    console.log(dates);
 }
 
 function bulkInsertObservations (observations)
@@ -117,12 +252,21 @@ function startNearby ()
             console.log("there are", stations.length, "stations");
             stations.forEach(station => {
                 dates.forEach(date => {
-                    jobs.push({station, date});
+                    jobs.push({station:`pws:${station}`, date});
                 });
             });
             console.log("# jobs:", jobs.length);
             //jobs.push(...stations);
         });
+}
+
+function startKNYC ()
+{
+    var station = "KNYC";
+
+    dates.forEach(date => {
+        jobs.push({station, date});
+    });
 }
 
 
@@ -216,8 +360,8 @@ function getStationHistory (job)
 //history_2016010520160112
 //history_2015122920160105
 //history_2015121520151222
-
-    var path = `/api/606f3f6977348613/history_${date}/units:english/v:2.0/q/pws:${station}.json`;
+//.replace(/\"snowdepth\": T,/g, "")
+    var path = `/api/606f3f6977348613/history_${date}/units:english/v:2.0/q/${station}.json`;
 
 	var options = {
 		hostname: "api.wunderground.com",
@@ -234,7 +378,7 @@ function getStationHistory (job)
                     body+=chunk;
                 });
                 res.on('end', () => {
-                    resolve({path, body});		
+                    resolve({path, body:body.replace(/\"snowdepth\": T,/g, "")});		
                 })
             });
 
@@ -249,3 +393,4 @@ function getStationHistory (job)
     return makeRequest()
         .then(saveResponse);
 }
+
